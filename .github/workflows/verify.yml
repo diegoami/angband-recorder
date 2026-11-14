@@ -14,6 +14,9 @@ jobs:
       - run: cargo fmt --check
       - run: cargo test --locked
       - run: cargo clippy --locked --all-targets --features ffi -- -D warnings
+      # Vanilla enables a graphical frontend even when only the test frontend
+      # was requested. Match its Linux build dependency without changing it.
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq libx11-dev
       - run: git clone --bare https://github.com/angband/angband.git /tmp/vanilla.git
       - run: python3 tests/round-trip.py --engine /tmp/vanilla.git --output /tmp/recorder-proof
       - uses: actions/upload-artifact@v4

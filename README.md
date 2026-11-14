@@ -25,6 +25,10 @@ frontend, plays eight turns, saves and quits, and verifies streams and final
 save bytes. It also rejects a changed RNG observation. Scratch stays outside
 Git; heavy work takes `/tmp/angband-validation.lock`.
 
+Build requirements: Rust/Cargo, a C compiler, CMake, Python 3.12+, patch and
+libX11 development headers. Vanilla CMake enables X11 as a fallback even when
+the test frontend was explicitly selected; the round trip itself uses no GUI.
+
 To build manually, apply `patches/angband-4.2.6-42cd156.patch` to that exact
 engine, then configure:
 
