@@ -73,4 +73,4 @@ The owner handover's next features are a single file with a branch tree,
 rolling save points, an in-game menu/scrubbing and restart-based branching,
 portability, size reduction and human GUI qualification. These are not
 claimed by the initial stream extraction. Curated recordings belong in
-`diegoami/borg-cemetery`, with release assets only when needed for size.
+`diegoami/player-cemetery`, with release assets only when needed for size.

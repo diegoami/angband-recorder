@@ -19,7 +19,7 @@ Run cargo fmt --check, cargo test --locked, cargo clippy --locked --all-targets
 --features ffi -- -D warnings and the vanilla round trip before a release.
 Builds/game suites take /tmp/angband-validation.lock. Retain raw proof outside
 Git and report failures and untested profiles. Never put saves or executable
-bundles in this repository. Curated recordings belong in borg-cemetery.
+bundles in this repository. Curated recordings belong in player-cemetery.
 
 Consumers vendor tagged releases and verify every byte against an external
 pin manifest before building. A Rust consumer links this crate through its
