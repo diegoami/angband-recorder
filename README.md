@@ -74,3 +74,9 @@ rolling save points, an in-game menu/scrubbing and restart-based branching,
 portability, size reduction and human GUI qualification. These are not
 claimed by the initial stream extraction. Curated recordings belong in
 `diegoami/player-cemetery`, with release assets only when needed for size.
+
+The delivered extraction and recorded-play workflow is now **M1, awaiting
+independent review**. See [milestone state](MILESTONES.md), the
+[pinned package](docs/milestones/M1.md) and the
+[reviewer prompt](docs/review/M1-PROMPT.md). Publication of v0.1.0 is not an
+independent acceptance verdict.
