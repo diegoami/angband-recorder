@@ -80,3 +80,11 @@ independent review**. See [milestone state](MILESTONES.md), the
 [pinned package](docs/milestones/M1.md) and the
 [reviewer prompt](docs/review/M1-PROMPT.md). Publication of v0.1.0 is not an
 independent acceptance verdict.
+
+## Optional native save retention
+
+[Rolling save points and fast inspection](docs/ROLLING-SAVES.md) retain recent
+command-boundary saves plus periodic older points. Set ANGBAND_SAVE_WINDOW
+and/or ANGBAND_SAVE_EVERY before recording. Use `view SOURCE --turn TURN` to
+inspect recorded screens without executing the game. Native saves start a
+new process; they do not serialize the bot's in-memory state.
