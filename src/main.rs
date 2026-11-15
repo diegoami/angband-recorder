@@ -1,4 +1,4 @@
-use angband_recorder::verify;
+use angband_recorder::{validate_recording, verify};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::env;
@@ -38,9 +38,27 @@ fn run(
     ] {
         command.env_remove(name);
     }
+    let mut arguments = launch.arguments.clone();
+    if let Some(original) = original {
+        validate_recording(original)?;
+        // Replays read frozen file bytes, but all game writes use a new private
+        // profile. Never overwrite the profile named by the original recipe.
+        let at = arguments
+            .iter()
+            .position(|a| a == "--")
+            .unwrap_or(arguments.len());
+        let tail = arguments.split_off(at);
+        for key in ["user", "save", "panic", "archive", "scores"] {
+            let directory = output.join("profile").join(key);
+            fs::create_dir_all(&directory)?;
+            arguments.retain(|arg| !arg.starts_with(&format!("-d{key}=")));
+            arguments.push(format!("-d{key}={}", directory.display()));
+        }
+        arguments.extend(tail);
+    }
     command
         .current_dir(&launch.cwd)
-        .args(&launch.arguments)
+        .args(&arguments)
         .env("ANGBAND_RECORD_DIR", output);
     if let Some(original) = original {
         command.env("ANGBAND_REPLAY_DIR", original);

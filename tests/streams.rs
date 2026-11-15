@@ -357,3 +357,60 @@ fn review_f16_host_extensions_cannot_replace_core_or_panic_on_shape() {
     merge_host_observation(&mut frame, json!({"inventory":[]})).unwrap();
     assert_eq!(frame["turn"], 1);
 }
+
+#[test]
+fn review_f3_f9_filesystem_decisions_are_ordered_inputs_not_live_state() {
+    let f = Fixture::new();
+    let mut record = Session::start(&f.0.join("record"), None, Fixture::meta()).unwrap();
+    assert!(record.newer(true).unwrap());
+    assert!(record.directory_open(true).unwrap());
+    assert_eq!(
+        record
+            .directory_read(true, 32, Some(b"second.save".to_vec()))
+            .unwrap(),
+        Some(b"second.save".to_vec())
+    );
+    assert_eq!(
+        record
+            .directory_read(true, 32, Some(b"first.save".to_vec()))
+            .unwrap(),
+        Some(b"first.save".to_vec())
+    );
+    assert_eq!(record.directory_read(true, 32, None).unwrap(), None);
+    record.finish().unwrap();
+    let mut replay = Session::start(
+        &f.0.join("replay"),
+        Some(&f.0.join("record")),
+        Fixture::meta(),
+    )
+    .unwrap();
+    assert!(replay.newer(false).unwrap());
+    assert!(replay.directory_open(false).unwrap());
+    assert_eq!(
+        replay
+            .directory_read(true, 32, Some(b"unrelated.new".to_vec()))
+            .unwrap(),
+        Some(b"second.save".to_vec())
+    );
+    assert_eq!(
+        replay.directory_read(true, 32, None).unwrap(),
+        Some(b"first.save".to_vec())
+    );
+    assert_eq!(
+        replay
+            .directory_read(true, 32, Some(b"extra".to_vec()))
+            .unwrap(),
+        None
+    );
+    replay.finish().unwrap();
+    verify(&f.0.join("record"), &f.0.join("replay")).unwrap();
+}
+#[test]
+fn directory_filter_buffer_and_entry_domains_fail_closed() {
+    let f = Fixture::new();
+    let mut record = Session::start(&f.0.join("record"), None, Fixture::meta()).unwrap();
+    assert!(record
+        .directory_read(true, 1, Some(b"long".to_vec()))
+        .is_err());
+    assert!(record.finish().is_err());
+}

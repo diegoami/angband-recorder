@@ -8,9 +8,12 @@ use std::io::{self, BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
 
 #[cfg(feature = "ffi")]
+use std::io::{Seek, SeekFrom};
+mod environment;
+#[cfg(feature = "ffi")]
 mod ffi;
 
-pub const SCHEMA: &str = "angband-recorder-streams@1";
+pub const SCHEMA: &str = "angband-recorder-streams@2";
 
 /// One terminal poll, including an empty poll. Layout shared with recorder.h.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -36,6 +39,20 @@ pub struct Input {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Event {
+    Newer {
+        value: bool,
+    },
+    DirectoryOpen {
+        present: bool,
+    },
+    DirectoryRead {
+        only_files: bool,
+        capacity: usize,
+        name: Option<Vec<u8>>,
+    },
+    TerminalInit {
+        geometry: [i64; 5],
+    },
     Exists {
         value: bool,
     },
@@ -80,6 +97,7 @@ fn exclusive(path: &Path) -> io::Result<File> {
 }
 
 const REQUIRED: &[&str] = &[
+    "environment.json",
     "recording.json",
     "inputs.jsonl",
     "frames.jsonl",
@@ -138,6 +156,17 @@ fn validate_poll(i: Input, key_size: i64) -> io::Result<()> {
         || (i.result == 1 && (i.event_type != 0 || i.code != 0 || i.mods != 0))
     {
         return Err(invalid("terminal poll outside native field domains"));
+    }
+    Ok(())
+}
+fn validate_directory_entry(capacity: usize, name: &Option<Vec<u8>>) -> io::Result<()> {
+    if capacity == 0
+        || capacity > 65536
+        || name
+            .as_ref()
+            .is_some_and(|n| n.len() >= capacity || n.contains(&0))
+    {
+        return Err(invalid("invalid directory entry/capacity"));
     }
     Ok(())
 }
@@ -207,7 +236,9 @@ fn recording_files(root: &Path) -> io::Result<std::collections::BTreeSet<String>
     for item in fs::read_dir(root)? {
         let item = item?;
         let name = item.file_name().to_string_lossy().into_owned();
-        if REQUIRED.contains(&name.as_str()) || name.starts_with("file-input-") {
+        if REQUIRED.contains(&name.as_str())
+            || (name.starts_with("file-input-") || name == "timezone.tzif")
+        {
             result.insert(name);
         }
     }
@@ -242,13 +273,27 @@ pub fn validate_recording(root: &Path) -> io::Result<Metadata> {
     let mut clocks = String::new();
     let mut actions = String::new();
     let mut files = String::new();
+    let environment = environment::Environment::load(root)?;
     let mut expected: std::collections::BTreeSet<String> =
         REQUIRED.iter().map(|s| s.to_string()).collect();
+    if environment.has_timezone_file() {
+        expected.insert("timezone.tzif".into());
+    }
     let mut file_count = 0;
     let mut poll_count = 0;
     let event_count = visit_json_lines(&root.join("inputs.jsonl"), |value| {
         let event: Event = serde_json::from_value(value)?;
         match event {
+            Event::Newer { .. } | Event::DirectoryOpen { .. } => {}
+            Event::DirectoryRead { capacity, name, .. } => {
+                validate_directory_entry(capacity, &name)?;
+            }
+            Event::TerminalInit { geometry } => {
+                validate_geometry(geometry)?;
+                if geometry != meta.geometry {
+                    return Err(invalid("terminal startup metadata differs"));
+                }
+            }
             Event::Poll { input: i } => {
                 validate_poll(i, meta.geometry[2])?;
                 poll_count += 1;
@@ -357,6 +402,13 @@ pub struct Session {
     output: PathBuf,
     original: Option<PathBuf>,
     replay: Option<BufReader<File>>,
+    #[allow(dead_code)]
+    environment: environment::Environment,
+    #[allow(dead_code)]
+    metadata_file: File,
+    #[allow(dead_code)]
+    geometry_file: File,
+    geometry_pending: bool,
     events: File,
     legacy: std::collections::BTreeMap<&'static str, File>,
     polls: u64,
@@ -414,6 +466,13 @@ impl Session {
         if metadata.pid < 1 {
             return Err(invalid("invalid RNG initialization PID"));
         }
+        let environment = if let Some(source) = original {
+            let value = environment::Environment::load(source)?;
+            value.copy_to(source, output)?;
+            value
+        } else {
+            environment::Environment::capture(output)?
+        };
         let mut manifest = exclusive(&output.join("recording.json"))?;
         json_line(&mut manifest, &metadata)?;
         let mut legacy = std::collections::BTreeMap::new();
@@ -429,11 +488,16 @@ impl Session {
         }
         writeln!(exclusive(&output.join("pid.txt"))?, "{}", metadata.pid)?;
         let [width, height, key_size, soft_cursor, complex_input] = metadata.geometry;
+        let mut geometry_file = exclusive(&output.join("geometry.json"))?;
         json_line(
-            &mut exclusive(&output.join("geometry.json"))?,
+            &mut geometry_file,
             &serde_json::json!({"width":width,"height":height,"key_size":key_size,"soft_cursor":soft_cursor,"complex_input":complex_input}),
         )?;
         Ok(Self {
+            environment,
+            metadata_file: manifest,
+            geometry_file,
+            geometry_pending: false,
             legacy,
             polls: 0,
             metadata,
@@ -463,6 +527,109 @@ impl Session {
             self.failed = true;
         }
         result
+    }
+    #[cfg(feature = "ffi")]
+    pub(crate) fn start_early(
+        output: &Path,
+        original: Option<&Path>,
+        build: String,
+        pid: i64,
+    ) -> io::Result<Self> {
+        let geometry = if let Some(source) = original {
+            validate_recording(source)?.geometry
+        } else {
+            [80, 24, 256, 0, 0]
+        };
+        let mut value = Self::start(
+            output,
+            original,
+            Metadata {
+                schema: SCHEMA.into(),
+                build,
+                pid,
+                geometry,
+            },
+        )?;
+        value.geometry_pending = true;
+        value.environment.apply(output)?;
+        if original.is_some() {
+            for (name, v) in [
+                "BORG_REPLAY_WIDTH",
+                "BORG_REPLAY_HEIGHT",
+                "BORG_REPLAY_KEY_SIZE",
+                "BORG_REPLAY_SOFT_CURSOR",
+                "BORG_REPLAY_COMPLEX_INPUT",
+            ]
+            .into_iter()
+            .zip(geometry)
+            {
+                std::env::set_var(name, v.to_string());
+            }
+        }
+        Ok(value)
+    }
+    #[cfg(feature = "ffi")]
+    pub(crate) fn attach_geometry(&mut self, geometry: [i64; 5]) -> io::Result<()> {
+        self.operation(|s| {
+            validate_geometry(geometry)?;
+            if !s.geometry_pending{return Err(invalid("terminal startup already attached"));}
+            if let Some(expected)=s.expected()? {
+                if expected!=(Event::TerminalInit{geometry}) || geometry!=s.metadata.geometry{return Err(invalid("terminal startup differs"));}
+            }
+            s.metadata.geometry=geometry;
+            for file in [&mut s.metadata_file,&mut s.geometry_file]{file.set_len(0)?;file.seek(SeekFrom::Start(0))?;}
+            json_line(&mut s.metadata_file,&s.metadata)?;
+            let [width,height,key_size,soft_cursor,complex_input]=geometry;
+            json_line(&mut s.geometry_file,&serde_json::json!({"width":width,"height":height,"key_size":key_size,"soft_cursor":soft_cursor,"complex_input":complex_input}))?;
+            s.write_event(&Event::TerminalInit{geometry})?;s.geometry_pending=false;Ok(())
+        })
+    }
+    pub fn newer(&mut self, actual: bool) -> io::Result<bool> {
+        self.operation(|s| {
+            let value = match s.expected()? {
+                None => actual,
+                Some(Event::Newer { value }) => value,
+                _ => return Err(invalid("file-newer call diverged")),
+            };
+            s.write_event(&Event::Newer { value })?;
+            Ok(value)
+        })
+    }
+    pub fn directory_open(&mut self, actual: bool) -> io::Result<bool> {
+        self.operation(|s| {
+            let present = match s.expected()? {
+                None => actual,
+                Some(Event::DirectoryOpen { present }) => present,
+                _ => return Err(invalid("directory-open call diverged")),
+            };
+            s.write_event(&Event::DirectoryOpen { present })?;
+            Ok(present)
+        })
+    }
+    pub fn directory_read(
+        &mut self,
+        only_files: bool,
+        capacity: usize,
+        actual: Option<Vec<u8>>,
+    ) -> io::Result<Option<Vec<u8>>> {
+        self.operation(|s| {
+            let name = match s.expected()? {
+                None => actual,
+                Some(Event::DirectoryRead {
+                    only_files: f,
+                    capacity: c,
+                    name,
+                }) if f == only_files && c == capacity => name,
+                _ => return Err(invalid("directory-read call diverged")),
+            };
+            validate_directory_entry(capacity, &name)?;
+            s.write_event(&Event::DirectoryRead {
+                only_files,
+                capacity,
+                name: name.clone(),
+            })?;
+            Ok(name)
+        })
     }
     pub fn poll(&mut self, input: Input) -> io::Result<Input> {
         self.operation(|s| s.poll_inner(input))
@@ -717,6 +884,9 @@ impl Session {
         json_line(&mut self.messages, message)
     }
     fn finish_inner(&mut self) -> io::Result<()> {
+        if self.geometry_pending {
+            return Err(invalid("frontend initialization incomplete"));
+        }
         if self.finished {
             return Ok(());
         }
