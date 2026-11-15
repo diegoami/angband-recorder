@@ -1,5 +1,7 @@
 //! External inputs are replayed; engine decisions and RNG are never supplied.
 //! Adapted from better-borg-c and borg-rs; see CREDITS.md.
+pub mod checkpoints;
+
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
@@ -375,6 +377,7 @@ pub fn validate_recording(root: &Path) -> io::Result<Metadata> {
     if recording_files(root)? != expected {
         return Err(invalid("recording file set differs from captured inputs"));
     }
+    checkpoints::validate(root)?;
     Ok(meta)
 }
 
@@ -423,6 +426,8 @@ pub struct Session {
     previous_cells: Vec<(u32, i32)>,
     #[cfg(feature = "ffi")]
     previous_size: (i32, i32),
+    #[cfg(feature = "ffi")]
+    checkpoints: Option<checkpoints::RollingSaves>,
 }
 
 impl Session {
@@ -516,6 +521,10 @@ impl Session {
             previous_cells: Vec::new(),
             #[cfg(feature = "ffi")]
             previous_size: (0, 0),
+            #[cfg(feature = "ffi")]
+            checkpoints: checkpoints::Config::environment()?
+                .map(|config| checkpoints::RollingSaves::new(output, config))
+                .transpose()?,
         })
     }
     fn operation<T>(&mut self, work: impl FnOnce(&mut Self) -> io::Result<T>) -> io::Result<T> {

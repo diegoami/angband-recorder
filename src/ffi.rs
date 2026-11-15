@@ -254,6 +254,9 @@ pub unsafe extern "C" fn ar_frame(phase: *const c_char, observation: *const Obse
         ar_host_free_extra(extra);
         checked(merge_host_observation(&mut frame, observation));
         checked(s.frame(&frame));
+        if let Some(saves) = &mut s.checkpoints {
+            checked(saves.capture(&frame, &s.output.join("world-fingerprint.save")));
+        }
     });
 }
 #[no_mangle]
