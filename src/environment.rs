@@ -23,7 +23,9 @@ enum Timezone {
 fn relevant(name: &str) -> bool {
     matches!(
         name,
-        "TZ" | "LANG"
+        "TZ" | "TZDIR"
+            | "PARSE_ERROR_LIMIT"
+            | "LANG"
             | "LC_ALL"
             | "LC_CTYPE"
             | "BORG_TOOLKIT_HEADLESS"
@@ -54,6 +56,12 @@ impl Environment {
             }
         }
         let tz = variables.get("TZ");
+        // libc resolves named zones through TZDIR; the captured value, not the
+        // ambient default, decides which file the recording depends on.
+        let zone_dir = variables
+            .get("TZDIR")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from("/usr/share/zoneinfo"));
         let path = match tz {
             None => Some(PathBuf::from("/etc/localtime")),
             Some(value) if value.is_empty() => None,
@@ -62,7 +70,7 @@ impl Environment {
                 let path = if Path::new(value).is_absolute() {
                     PathBuf::from(value)
                 } else {
-                    Path::new("/usr/share/zoneinfo").join(value)
+                    zone_dir.join(value)
                 };
                 if path.is_file() {
                     Some(path)

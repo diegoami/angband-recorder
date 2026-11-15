@@ -58,6 +58,25 @@ def main():
         require(text.startswith('2020-12-25:'),'calendar boundary did not exercise the selected timezone')
         require(run('release','replay',out/'record',tz='UTC0').returncode==0,'captured calendar context did not replay')
         subprocess.run(['cargo','run','--quiet','--locked','--manifest-path',str(ROOT/'Cargo.toml'),'--','verify',str(out/'record'),str(out/'replay')],check=True,stdout=log,stderr=subprocess.STDOUT)
+        # F24: a named zone that only resolves through TZDIR. Recording with
+        # TZDIR=/nonexistent seals the unresolvable POSIX name; replay must
+        # restore the captured TZDIR (staying on the recorded UTC reading)
+        # rather than silently resolving through the ambient zone directory.
+        env=dict(os.environ)
+        for key in ['BORG_RECORD_DIR','BORG_REPLAY_DIR','ANGBAND_RECORD_DIR','ANGBAND_REPLAY_DIR']:env.pop(key,None)
+        env.update(ANGBAND_RECORD_DIR=str(out/'tzdir-record'),TZDIR='/nonexistent',TZ='New_York')
+        result=subprocess.run([str(out/'release')],env=env,capture_output=True,text=True,timeout=15)
+        (out/'tzdir-record.log').write_text(result.stdout+result.stderr)
+        require(result.returncode==0,'TZDIR recording failed')
+        text=json.loads((out/'tzdir-record/messages.jsonl').read_text())['text']
+        require(text.startswith('2020-12-24:'),'the control did not capture an unresolvable-zone reading: '+text)
+        env2=dict(os.environ)
+        for key in ['BORG_RECORD_DIR','BORG_REPLAY_DIR','ANGBAND_RECORD_DIR','ANGBAND_REPLAY_DIR']:env2.pop(key,None)
+        env2.update(ANGBAND_RECORD_DIR=str(out/'tzdir-replay'),ANGBAND_REPLAY_DIR=str(out/'tzdir-record'),TZDIR='/usr/share/zoneinfo/America',TZ='UTC0')
+        result=subprocess.run([str(out/'release')],env=env2,capture_output=True,text=True,timeout=15)
+        (out/'tzdir-replay.log').write_text(result.stdout+result.stderr)
+        require(result.returncode==0,'the captured TZDIR context did not replay')
+        subprocess.run(['cargo','run','--quiet','--locked','--manifest-path',str(ROOT/'Cargo.toml'),'--','verify',str(out/'tzdir-record'),str(out/'tzdir-replay')],check=True,stdout=log,stderr=subprocess.STDOUT)
         require(run('debug','wrong-binary',out/'record').returncode!=0,'different executable accepted')
         require(not (out/'wrong-binary/complete.json').exists(),'wrong executable wrote a receipt')
         malformed=out/'wide-source';shutil.copytree(out/'record',malformed)
@@ -68,7 +87,7 @@ def main():
         row=(malformed/'events.txt').read_text().split();row[4]=str(2**32+32);(malformed/'events.txt').write_text(' '.join(row)+'\n')
         require(run('release','wide-key',malformed).returncode!=0,'wide key truncated and accepted')
         require(not (out/'wide-key/complete.json').exists(),'wide key wrote a receipt')
-        result={'calendar_boundary_replayed':True,'different_binary_rejected':True,'native_wide_key_rejected':True,
+        result={'calendar_boundary_replayed':True,'tzdir_reapplied':True,'different_binary_rejected':True,'native_wide_key_rejected':True,
                 'release_sha256':hashlib.sha256((out/'release').read_bytes()).hexdigest(),'debug_sha256':hashlib.sha256((out/'debug').read_bytes()).hexdigest()}
         (out/'result.json').write_text(json.dumps(result,indent=2)+'\n');print(json.dumps(result))
 

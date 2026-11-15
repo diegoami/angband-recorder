@@ -22,7 +22,9 @@ def check(pin_path, vendor):
         if path.is_absolute() or '..' in path.parts or str(path) != name:
             raise ValueError('unsafe recorder pin member: ' + name)
     actual = {}
-    for directory, dirs, files in os.walk(root, followlinks=False):
+    def on_error(error):
+        raise ValueError('recorder pin traversal failed: ' + str(error))
+    for directory, dirs, files in os.walk(root, followlinks=False, onerror=on_error):
         base = Path(directory)
         for name in list(dirs) + files:
             path = base / name

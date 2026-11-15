@@ -10,7 +10,7 @@ The initial engine adapter targets vanilla **Angband 4.2.6,
 option is **off by default**. The crate owns capture, replay, ordered input
 streams, time wrapping, file preservation, frame encoding and verification.
 C translates Angband structures and provides a forked save callback. See
-[the comparison](docs/COMPARISON.md), [format](spec/streams-v1.md) and
+[the comparison](docs/COMPARISON.md), [format](spec/streams-v2.md) and
 [credits](CREDITS.md).
 
 ```sh

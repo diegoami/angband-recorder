@@ -100,6 +100,7 @@ def main():
         repeated = save_hashes(out / 'replay/profile/save')
         require(saved == repeated, 'replay final save bytes differ')
         require(not list((out/'profile/save').glob('*')), 'replay wrote into original save profile')
+        require(not list((build / 'game').rglob('*.new')), 'replay wrote outside the replay profile')
         frames,events,families,messages = validate_channels(out/'record')
         frame_file = out / 'replay/frames.jsonl'; original = frame_file.read_bytes()
         changed = original.replace(b'"quick":0',b'"quick":1',1)

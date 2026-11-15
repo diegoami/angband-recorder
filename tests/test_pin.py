@@ -30,3 +30,19 @@ class PinControls(unittest.TestCase):
             self.assertEqual(result().returncode,0)
             (target/'cache').unlink();target.rmdir();target.symlink_to(base/'outside',target_is_directory=True)
             self.assertNotEqual(result().returncode,0)
+
+    def test_review_f29_traversal_errors_are_not_silently_ignored(self):
+        if os.geteuid()==0:
+            self.skipTest('unreadable directories are readable by root')
+        with tempfile.TemporaryDirectory() as folder:
+            base=Path(folder);root=base/'vendor';root.mkdir()
+            (root/'source.rs').write_text('source')
+            locked=root/'locked';locked.mkdir();(locked/'unsealed.rs').write_text('bad')
+            pin=base/'pin.json';pin.write_text(json.dumps({'tag':'test','commit':'test','files_sha256':{'source.rs':hashlib.sha256(b'source').hexdigest()}}))
+            locked.chmod(0o000)
+            try:
+                result=subprocess.run(['python3',str(CHECKER),str(pin),str(root)],capture_output=True,text=True)
+            finally:
+                locked.chmod(0o755)
+            self.assertNotEqual(result.returncode,0)
+            self.assertIn('traversal',result.stderr)
