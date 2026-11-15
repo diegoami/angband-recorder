@@ -101,25 +101,39 @@ class Session:
 
     def __init__(self, display, cli, binary, record_dir, arguments, keys, env=None):
         self.record_dir = Path(record_dir)
+        print('recording', self.record_dir, flush=True)
         env = {**os.environ, 'DISPLAY': display, **(env or {})}
         for name in ['BORG_RECORD_DIR', 'BORG_REPLAY_DIR', 'ANGBAND_RECORD_DIR',
                      'ANGBAND_REPLAY_DIR']:
             env.pop(name, None)
         env['ANGBAND_RECORD_DIR'] = str(self.record_dir)
+        self.game_stderr = open(str(self.record_dir) + '.stderr', 'w')
         self.process = subprocess.Popen(
             [str(cli), 'record', str(self.record_dir), '--', str(binary), *arguments],
-            cwd=str(Path(binary).parent), env=env,
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        self.win = wait_window(display)
-        self.display = display
-        send_keys(display, self.win, xkeys(keys))
+            cwd=str(Path(binary).parent), env=env, start_new_session=True,
+            stdout=subprocess.DEVNULL, stderr=self.game_stderr)
+        try:
+            self.win = wait_window(display)
+            self.display = display
+            send_keys(display, self.win, xkeys(keys))
+        except BaseException:
+            os.killpg(os.getpgid(self.process.pid), signal.SIGKILL)
+            self.game_stderr.close()
+            raise
 
     def wait(self, timeout=240):
-        self.process.wait(timeout=timeout)
+        try:
+            self.process.wait(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            os.killpg(os.getpgid(self.process.pid), signal.SIGKILL)
+            self.game_stderr.close()
+            raise RuntimeError('the recorded X11 session did not exit: ' + str(self.record_dir))
+        self.game_stderr.close()
         require(self.process.returncode == 0, 'a recorded X11 session failed: ' +
-                str(self.record_dir))
+                str(self.record_dir) + '; see ' + str(self.record_dir) + '.stderr')
         require((self.record_dir / 'complete.json').is_file(),
                 'no completion receipt: ' + str(self.record_dir))
+
 
 
 def replay(display, cli, source, output, timeout=90):
@@ -248,8 +262,8 @@ def main():
     print(json.dumps(result))
 
 
-RECORD_FONT = 'DejaVu Sans Mono-10'
-HOSTILE_FONT = 'DejaVu Sans Mono-18'
+RECORD_FONT = '10x20'
+HOSTILE_FONT = '12x24'
 BIRTH = ['space'] + ['Return'] * 12 + ['Escape'] * 8 + [','] * 8 + ['Escape'] * 3 + ['C-x', 'SLEEP:2.5', 'Escape']
 
 

@@ -65,7 +65,9 @@ variables are behavior inputs like any other and are restored verbatim.
 - `file` — presence and SHA-256 of a read-time captured file; present files
   are stored as `file-input-NNNNNN.bin` and absent files must have neither
   blob nor digest.
-- `exists` — boolean existence result.
+- `exists` — boolean existence result. Existence checks of the session's
+  own savefile during save are live session state (stat()ed directly in
+  both record and replay), not recorded inputs.
 - `newer` — boolean `file_newer` result (v2: recovery decisions are inputs).
 - `directory_open` / `directory_read` — save-menu enumeration results;
   `directory_read` carries `only_files`, a 1..65536 `capacity` and the
