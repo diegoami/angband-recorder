@@ -1,6 +1,6 @@
 //! Linux engine ABI. The host calls this on its game thread. The clock wrapper
 //! may be called from other threads. Forked savers bypass the inherited lock.
-use crate::{Input, Metadata, Session, SCHEMA};
+use crate::{merge_host_observation, Input, Metadata, Session, SCHEMA};
 use serde_json::json;
 use std::ffi::{c_char, c_long, CStr, CString, OsStr};
 use std::os::unix::ffi::OsStrExt;
@@ -35,6 +35,9 @@ fn with_session<T>(f: impl FnOnce(&mut Session) -> T) -> Option<T> {
     SESSION.lock().unwrap().as_mut().map(f)
 }
 unsafe fn text<'a>(value: *const c_char) -> &'a str {
+    if value.is_null() {
+        fatal("null host string");
+    }
     CStr::from_ptr(value).to_str().unwrap_or_else(|e| fatal(e))
 }
 fn env(primary: &str, legacy: &str) -> Option<std::ffi::OsString> {
@@ -154,6 +157,9 @@ pub struct Observation {
 }
 #[no_mangle]
 pub unsafe extern "C" fn ar_frame(phase: *const c_char, observation: *const Observation) {
+    if observation.is_null() {
+        fatal("null host observation");
+    }
     with_session(|s| {
         let o = &*observation;
         if !(1..=255).contains(&o.width) || !(1..=255).contains(&o.height) {
@@ -201,10 +207,7 @@ pub unsafe extern "C" fn ar_frame(phase: *const c_char, observation: *const Obse
         let observation: serde_json::Value =
             serde_json::from_str(text(extra)).unwrap_or_else(|e| fatal(e));
         ar_host_free_extra(extra);
-        frame
-            .as_object_mut()
-            .unwrap()
-            .extend(observation.as_object().unwrap().clone());
+        checked(merge_host_observation(&mut frame, observation));
         checked(s.frame(&frame));
     });
 }

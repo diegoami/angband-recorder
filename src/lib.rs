@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::fs::{self, File, OpenOptions};
-use std::io::{self, BufRead, BufReader, Write};
+use std::io::{self, BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
 
 #[cfg(feature = "ffi")]
@@ -34,7 +34,7 @@ pub struct Input {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Event {
     Exists {
         value: bool,
@@ -59,6 +59,7 @@ pub enum Event {
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub struct Metadata {
     pub schema: String,
     pub build: String,
@@ -76,6 +77,277 @@ fn json_line(writer: &mut File, value: &impl Serialize) -> io::Result<()> {
 }
 fn exclusive(path: &Path) -> io::Result<File> {
     OpenOptions::new().write(true).create_new(true).open(path)
+}
+
+const REQUIRED: &[&str] = &[
+    "recording.json",
+    "inputs.jsonl",
+    "frames.jsonl",
+    "messages.jsonl",
+    "complete.json",
+    "events.txt",
+    "clock.txt",
+    "pid.txt",
+    "actions.txt",
+    "file-inputs.txt",
+    "geometry.json",
+    "native-messages.jsonl",
+    "combat.jsonl",
+    "record-complete.json",
+];
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Receipt {
+    inputs: u64,
+    frames: u64,
+}
+
+fn validate_geometry(g: [i64; 5]) -> io::Result<()> {
+    if !(1..=255).contains(&g[0])
+        || !(1..=255).contains(&g[1])
+        || !(1..=65535).contains(&g[2])
+        || ![0, 1].contains(&g[3])
+        || ![0, 1].contains(&g[4])
+    {
+        return Err(invalid("invalid initial terminal geometry/queue/flags"));
+    }
+    Ok(())
+}
+fn valid_event_type(value: i64) -> bool {
+    matches!(value, 0 | 1 | 2 | 4 | 8 | 16 | 32 | 64 | 128 | 256)
+}
+fn validate_poll(i: Input, key_size: i64) -> io::Result<()> {
+    if ![0, 1].contains(&i.wait)
+        || ![0, 1].contains(&i.take)
+        || ![0, 1].contains(&i.result)
+        || ![0, 1].contains(&i.disconnect)
+        || ![0, 1].contains(&i.mapped)
+        || !valid_event_type(i.event_type)
+        || !(0..=u32::MAX as i64).contains(&i.code)
+        || !(0..=31).contains(&i.mods)
+        || !(0..=255).contains(&i.x)
+        || !(0..=255).contains(&i.y)
+        || !(0..=255).contains(&i.button)
+        || !(0..key_size).contains(&i.head)
+        || !(0..key_size).contains(&i.tail)
+        || !(1..=255).contains(&i.width)
+        || !(1..=255).contains(&i.height)
+        || (i.event_type == 2 && i.code != 0)
+        || (i.event_type != 2 && (i.x != 0 || i.y != 0 || i.button != 0))
+        || (i.result == 1 && (i.event_type != 0 || i.code != 0 || i.mods != 0))
+    {
+        return Err(invalid("terminal poll outside native field domains"));
+    }
+    Ok(())
+}
+fn regular_file(path: &Path) -> io::Result<File> {
+    if !fs::symlink_metadata(path)?.file_type().is_file() {
+        return Err(invalid(format!(
+            "not a regular recording file: {}",
+            path.display()
+        )));
+    }
+    File::open(path)
+}
+fn read_regular(path: &Path) -> io::Result<Vec<u8>> {
+    let mut bytes = Vec::new();
+    regular_file(path)?.read_to_end(&mut bytes)?;
+    Ok(bytes)
+}
+fn visit_json_lines(
+    path: &Path,
+    mut visit: impl FnMut(Value) -> io::Result<()>,
+) -> io::Result<u64> {
+    let mut reader = BufReader::new(regular_file(path)?);
+    let mut count = 0;
+    loop {
+        let mut line = Vec::new();
+        let size = Read::take(&mut reader, 8 * 1024 * 1024 + 1).read_until(b'\n', &mut line)?;
+        if size == 0 {
+            return Ok(count);
+        }
+        if size > 8 * 1024 * 1024 || line.last() != Some(&b'\n') {
+            return Err(invalid("truncated or oversized JSONL record"));
+        }
+        let value: Value = serde_json::from_slice(&line)?;
+        if !value.is_object() {
+            return Err(invalid("observation/event must be a JSON object"));
+        }
+        visit(value)?;
+        count += 1;
+    }
+}
+fn receipt_new(path: &Path, value: &Receipt) -> io::Result<()> {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static NEXT: AtomicU64 = AtomicU64::new(0);
+    let (temporary, mut file) = loop {
+        let candidate = path.with_file_name(format!(
+            ".receipt-{}-{}",
+            std::process::id(),
+            NEXT.fetch_add(1, Ordering::Relaxed)
+        ));
+        match exclusive(&candidate) {
+            Ok(file) => break (candidate, file),
+            Err(e) if e.kind() == io::ErrorKind::AlreadyExists => continue,
+            Err(e) => return Err(e),
+        }
+    };
+    let result = (|| {
+        json_line(&mut file, value)?;
+        file.sync_all()?;
+        fs::hard_link(&temporary, path)
+    })();
+    let _ = fs::remove_file(temporary);
+    result
+}
+
+fn recording_files(root: &Path) -> io::Result<std::collections::BTreeSet<String>> {
+    let mut result = std::collections::BTreeSet::new();
+    for item in fs::read_dir(root)? {
+        let item = item?;
+        let name = item.file_name().to_string_lossy().into_owned();
+        if REQUIRED.contains(&name.as_str()) || name.starts_with("file-input-") {
+            result.insert(name);
+        }
+    }
+    Ok(result)
+}
+/// Validate complete source structure and counters before replay or success.
+pub fn validate_recording(root: &Path) -> io::Result<Metadata> {
+    for name in REQUIRED {
+        regular_file(&root.join(name))?;
+    }
+    let meta: Metadata = serde_json::from_slice(&read_regular(&root.join("recording.json"))?)?;
+    validate_geometry(meta.geometry)?;
+    if meta.schema != SCHEMA || meta.pid < 1 || meta.pid > i32::MAX as i64 || meta.build.is_empty()
+    {
+        return Err(invalid("invalid recording identity"));
+    }
+    let receipt: Receipt = serde_json::from_slice(&read_regular(&root.join("complete.json"))?)?;
+    let legacy: Receipt =
+        serde_json::from_slice(&read_regular(&root.join("record-complete.json"))?)?;
+    let frame_count = visit_json_lines(&root.join("frames.jsonl"), |_| Ok(()))?;
+    visit_json_lines(&root.join("messages.jsonl"), |_| Ok(()))?;
+    visit_json_lines(&root.join("combat.jsonl"), |_| Ok(()))?;
+    if receipt.frames != frame_count || legacy.frames != receipt.frames {
+        return Err(invalid("completion frame counters differ"));
+    }
+    if read_regular(&root.join("messages.jsonl"))?
+        != read_regular(&root.join("native-messages.jsonl"))?
+    {
+        return Err(invalid("message aliases differ"));
+    }
+    let mut polls = String::new();
+    let mut clocks = String::new();
+    let mut actions = String::new();
+    let mut files = String::new();
+    let mut expected: std::collections::BTreeSet<String> =
+        REQUIRED.iter().map(|s| s.to_string()).collect();
+    let mut file_count = 0;
+    let mut poll_count = 0;
+    let event_count = visit_json_lines(&root.join("inputs.jsonl"), |value| {
+        let event: Event = serde_json::from_value(value)?;
+        match event {
+            Event::Poll { input: i } => {
+                validate_poll(i, meta.geometry[2])?;
+                poll_count += 1;
+                polls += &format!(
+                    "{} {} {} {} {} {} {} {} {} {} {} {} {} {} {}\n",
+                    i.wait,
+                    i.take,
+                    i.result,
+                    i.event_type,
+                    i.code,
+                    i.mods,
+                    i.x,
+                    i.y,
+                    i.button,
+                    i.head,
+                    i.tail,
+                    i.disconnect,
+                    i.width,
+                    i.height,
+                    i.mapped
+                );
+            }
+            Event::Clock { value } => clocks += &format!("{value}\n"),
+            Event::Exists { .. } => {}
+            Event::Bot {
+                turn,
+                count,
+                event_type: t,
+                code,
+                mods,
+            } => {
+                if !valid_event_type(t) || mods > 31 {
+                    return Err(invalid("invalid bot key fields"));
+                }
+                actions += &format!("{turn} {count} {t} {code} {mods}\n");
+            }
+            Event::File { present, sha256 } => {
+                file_count += 1;
+                files += if present { "1\n" } else { "0\n" };
+                let name = format!("file-input-{file_count:06}.bin");
+                let path = root.join(&name);
+                if present {
+                    let bytes = read_regular(&path)?;
+                    if sha256.as_deref() != Some(format!("{:x}", Sha256::digest(bytes)).as_str()) {
+                        return Err(invalid("captured file digest differs"));
+                    }
+                    expected.insert(name);
+                } else if sha256.is_some() || fs::symlink_metadata(path).is_ok() {
+                    return Err(invalid("absent input has a blob or digest"));
+                }
+            }
+        }
+        Ok(())
+    })?;
+    if receipt.inputs != event_count {
+        return Err(invalid("completion input counter differs"));
+    }
+    if legacy.inputs != poll_count {
+        return Err(invalid("legacy poll count differs"));
+    }
+    for (name, text) in [
+        ("events.txt", polls),
+        ("clock.txt", clocks),
+        ("actions.txt", actions),
+        ("file-inputs.txt", files),
+        ("pid.txt", format!("{}\n", meta.pid)),
+    ] {
+        if read_regular(&root.join(name))? != text.as_bytes() {
+            return Err(invalid(format!("compatibility stream differs: {name}")));
+        }
+    }
+    let [width, height, key_size, soft_cursor, complex_input] = meta.geometry;
+    let geometry: Value = serde_json::from_slice(&read_regular(&root.join("geometry.json"))?)?;
+    if geometry
+        != serde_json::json!({"width":width,"height":height,"key_size":key_size,"soft_cursor":soft_cursor,"complex_input":complex_input})
+    {
+        return Err(invalid("geometry metadata differs"));
+    }
+    if recording_files(root)? != expected {
+        return Err(invalid("recording file set differs from captured inputs"));
+    }
+    Ok(meta)
+}
+
+/// Host extensions may add diagnostics but cannot replace trusted core values.
+pub fn merge_host_observation(core: &mut Value, extension: Value) -> io::Result<()> {
+    let base = core
+        .as_object_mut()
+        .ok_or_else(|| invalid("core frame is not an object"))?;
+    let extra = extension
+        .as_object()
+        .ok_or_else(|| invalid("host extension is not an object"))?;
+    if let Some(key) = extra.keys().find(|key| base.contains_key(*key)) {
+        return Err(invalid(format!(
+            "host extension replaces a core observation: {key}"
+        )));
+    }
+    base.extend(extra.clone());
+    Ok(())
 }
 
 /// The session owns streams; separate per-process output prevents replay from
@@ -110,16 +382,19 @@ impl Session {
         if metadata.schema != SCHEMA {
             return Err(invalid("unsupported recording schema"));
         }
+        validate_geometry(metadata.geometry)?;
+        if metadata.pid < 1 || metadata.pid > i32::MAX as i64 || metadata.build.is_empty() {
+            return Err(invalid("invalid initial identity"));
+        }
         fs::create_dir_all(output)?;
         // Hosts may already have opened a console log or archive directory.
         // Every recorder-owned file below still uses create_new, so a prior
         // capture can never be overwritten.
-        if output.join("recording.json").exists() {
+        if !recording_files(output)?.is_empty() {
             return Err(invalid("recording output already contains a capture"));
         }
         let replay = if let Some(source) = original {
-            let prior: Metadata =
-                serde_json::from_reader(File::open(source.join("recording.json"))?)?;
+            let prior = validate_recording(source)?;
             if prior.schema != SCHEMA
                 || prior.build != metadata.build
                 || prior.geometry != metadata.geometry
@@ -179,6 +454,53 @@ impl Session {
             previous_size: (0, 0),
         })
     }
+    fn operation<T>(&mut self, work: impl FnOnce(&mut Self) -> io::Result<T>) -> io::Result<T> {
+        if self.finished || self.failed {
+            return Err(invalid("recording is closed or failed"));
+        }
+        let result = work(self);
+        if result.is_err() {
+            self.failed = true;
+        }
+        result
+    }
+    pub fn poll(&mut self, input: Input) -> io::Result<Input> {
+        self.operation(|s| s.poll_inner(input))
+    }
+    pub fn exists(&mut self, value: bool) -> io::Result<bool> {
+        self.operation(|s| s.exists_inner(value))
+    }
+    pub fn clock(&mut self, value: i64) -> io::Result<i64> {
+        self.operation(|s| s.clock_inner(value))
+    }
+    pub fn bot(
+        &mut self,
+        turn: i64,
+        count: i64,
+        event_type: i64,
+        code: u32,
+        mods: u8,
+    ) -> io::Result<()> {
+        self.operation(|s| s.bot_inner(turn, count, event_type, code, mods))
+    }
+    pub fn read_path(&mut self, path: &Path) -> io::Result<PathBuf> {
+        self.operation(|s| s.read_path_inner(path))
+    }
+    pub fn frame(&mut self, value: &Value) -> io::Result<()> {
+        self.operation(|s| s.frame_inner(value))
+    }
+    pub fn message(&mut self, value: &Value) -> io::Result<()> {
+        self.operation(|s| s.message_inner(value))
+    }
+    pub fn combat(&mut self, value: &Value) -> io::Result<()> {
+        self.operation(|s| s.combat_inner(value))
+    }
+    pub fn finish(&mut self) -> io::Result<()> {
+        if self.finished {
+            return Ok(());
+        }
+        self.operation(|s| s.finish_inner())
+    }
     pub fn is_replay(&self) -> bool {
         self.replay.is_some()
     }
@@ -209,7 +531,7 @@ impl Session {
         self.count += 1;
         Ok(())
     }
-    pub fn poll(&mut self, actual: Input) -> io::Result<Input> {
+    fn poll_inner(&mut self, actual: Input) -> io::Result<Input> {
         let event = self.expected()?;
         let input = match event {
             None => actual,
@@ -223,16 +545,7 @@ impl Session {
                 return Err(invalid("terminal call diverged"));
             }
         };
-        if input.width < 1
-            || input.height < 1
-            || input.width > 255
-            || input.height > 255
-            || input.head < 0
-            || input.tail < 0
-        {
-            self.failed = true;
-            return Err(invalid("invalid terminal geometry or queue"));
-        }
+        validate_poll(input, self.metadata.geometry[2])?;
         if std::env::var_os("BORG_TOOLKIT_HEADLESS").is_some() && input != actual {
             self.failed = true;
             return Err(invalid("recomputed frontend poll diverged"));
@@ -263,7 +576,7 @@ impl Session {
         self.write_event(&Event::Poll { input })?;
         Ok(input)
     }
-    pub fn exists(&mut self, actual: bool) -> io::Result<bool> {
+    fn exists_inner(&mut self, actual: bool) -> io::Result<bool> {
         let value = match self.expected()? {
             None => actual,
             Some(Event::Exists { value }) => value,
@@ -275,7 +588,7 @@ impl Session {
         self.write_event(&Event::Exists { value })?;
         Ok(value)
     }
-    pub fn clock(&mut self, actual: i64) -> io::Result<i64> {
+    fn clock_inner(&mut self, actual: i64) -> io::Result<i64> {
         let value = match self.expected()? {
             None => actual,
             Some(Event::Clock { value }) => value,
@@ -289,7 +602,7 @@ impl Session {
         self.write_event(&Event::Clock { value })?;
         Ok(value)
     }
-    pub fn bot(
+    fn bot_inner(
         &mut self,
         turn: i64,
         count: i64,
@@ -297,6 +610,9 @@ impl Session {
         code: u32,
         mods: u8,
     ) -> io::Result<()> {
+        if !valid_event_type(event_type) || mods > 31 {
+            return Err(invalid("invalid bot key fields"));
+        }
         let event = Event::Bot {
             turn,
             count,
@@ -318,7 +634,7 @@ impl Session {
         self.write_event(&event)
     }
     /// Capture at read time and return the captured bytes for the engine to open.
-    pub fn read_path(&mut self, path: &Path) -> io::Result<PathBuf> {
+    fn read_path_inner(&mut self, path: &Path) -> io::Result<PathBuf> {
         self.file_count += 1;
         let name = format!("file-input-{:06}.bin", self.file_count);
         let expected = self.expected()?;
@@ -368,27 +684,39 @@ impl Session {
         self.legacy.get_mut("file-inputs.txt").unwrap().flush()?;
         self.write_event(&event)?;
         let target = self.output.join(name);
+        if fs::symlink_metadata(&target).is_ok() {
+            return Err(invalid("captured input target already exists"));
+        }
         if let Some(bytes) = bytes {
             exclusive(&target)?.write_all(&bytes)?;
         }
         Ok(target)
     }
-    pub fn frame(&mut self, frame: &Value) -> io::Result<()> {
+    fn frame_inner(&mut self, frame: &Value) -> io::Result<()> {
+        if !frame.is_object() {
+            return Err(invalid("observation must be an object"));
+        }
         json_line(&mut self.frames, frame)?;
         self.frame_count += 1;
         Ok(())
     }
-    pub fn combat(&mut self, event: &Value) -> io::Result<()> {
+    fn combat_inner(&mut self, event: &Value) -> io::Result<()> {
+        if !event.is_object() {
+            return Err(invalid("observation must be an object"));
+        }
         json_line(self.legacy.get_mut("combat.jsonl").unwrap(), event)
     }
-    pub fn message(&mut self, message: &Value) -> io::Result<()> {
+    fn message_inner(&mut self, message: &Value) -> io::Result<()> {
+        if !message.is_object() {
+            return Err(invalid("observation must be an object"));
+        }
         json_line(
             self.legacy.get_mut("native-messages.jsonl").unwrap(),
             message,
         )?;
         json_line(&mut self.messages, message)
     }
-    pub fn finish(&mut self) -> io::Result<()> {
+    fn finish_inner(&mut self) -> io::Result<()> {
         if self.finished {
             return Ok(());
         }
@@ -410,14 +738,28 @@ impl Session {
             stream.flush()?;
             stream.sync_all()?;
         }
-        json_line(
-            &mut exclusive(&self.output.join("record-complete.json"))?,
-            &serde_json::json!({"inputs":self.polls,"frames":self.frame_count}),
+        receipt_new(
+            &self.output.join("record-complete.json"),
+            &Receipt {
+                inputs: self.polls,
+                frames: self.frame_count,
+            },
         )?;
-        json_line(
-            &mut exclusive(&self.output.join("complete.json"))?,
-            &serde_json::json!({"inputs":self.count,"frames":self.frame_count}),
-        )?;
+        if let Err(error) = receipt_new(
+            &self.output.join("complete.json"),
+            &Receipt {
+                inputs: self.count,
+                frames: self.frame_count,
+            },
+        ) {
+            let _ = fs::remove_file(self.output.join("record-complete.json"));
+            return Err(error);
+        }
+        if let Err(error) = validate_recording(&self.output) {
+            let _ = fs::remove_file(self.output.join("complete.json"));
+            let _ = fs::remove_file(self.output.join("record-complete.json"));
+            return Err(error);
+        }
         self.finished = true;
         Ok(())
     }
@@ -426,32 +768,15 @@ impl Session {
 /// Byte comparison includes all observations, captured reads and the footer.
 /// Re-execution must have completed before invoking this function.
 pub fn verify(original: &Path, replay: &Path) -> io::Result<()> {
-    if !original.join("complete.json").is_file() || !replay.join("complete.json").is_file() {
-        return Err(invalid("missing completion receipt"));
+    validate_recording(original)?;
+    validate_recording(replay)?;
+    let names = recording_files(original)?;
+    if names != recording_files(replay)? {
+        return Err(invalid("recording compared-file sets differ"));
     }
-    for item in fs::read_dir(original)? {
-        let item = item?;
-        let name = item.file_name();
-        let name_str = name.to_string_lossy();
-        let compared = matches!(
-            name_str.as_ref(),
-            "recording.json"
-                | "inputs.jsonl"
-                | "frames.jsonl"
-                | "messages.jsonl"
-                | "complete.json"
-                | "events.txt"
-                | "clock.txt"
-                | "pid.txt"
-                | "actions.txt"
-                | "file-inputs.txt"
-                | "geometry.json"
-                | "native-messages.jsonl"
-                | "combat.jsonl"
-                | "record-complete.json"
-        ) || name_str.starts_with("file-input-");
-        if compared && fs::read(item.path())? != fs::read(replay.join(&name))? {
-            return Err(invalid(format!("replay differs: {name_str}")));
+    for name in names {
+        if read_regular(&original.join(&name))? != read_regular(&replay.join(&name))? {
+            return Err(invalid(format!("replay differs: {name}")));
         }
     }
     Ok(())
