@@ -25,3 +25,14 @@ Consumers vendor tagged releases and verify every byte against an external
 pin manifest before building. A Rust consumer links this crate through its
 existing staticlib, never a second Rust runtime. Recorder-off oracle builds
 stay off. Tags are immutable; a correction requires a new release.
+
+## Milestone reviews
+
+Read MILESTONES.md before selecting more work. M1's implementation is delivered
+and its independent review is pending on issue #2; the owner will launch their
+reviewer separately. The author prepares pinned inputs/evidence and a prompt,
+never an independent verdict. Keep findings as M1-F1..n with exact source and
+reproduced/read-only evidence, preserving original receipts and scoped owners.
+Only the owner accepts the milestone after review/corrections. Existing release
+tags are immutable delivery refs, not retroactive acceptance. Do not create an
+acceptance tag or start the next feature batch automatically.
