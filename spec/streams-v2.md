@@ -27,8 +27,13 @@ captured read and, when a zone file was sealed, `timezone.tzif`:
 `actions.txt`, `file-inputs.txt`, `geometry.json`, `native-messages.jsonl`,
 `combat.jsonl`, `record-complete.json`.
 
-Verification rejects missing, extra or non-regular entries against the
-expected set derived from the streams; `messages.jsonl` and
+Verification rejects missing, extra or non-regular entries: the
+recording directory admits the streams above, `file-input-*` blobs,
+`timezone.tzif`, the `launch.json` receipt, the recorder's
+`world-fingerprint.save`, the native save-point directory `checkpoints/`,
+the replay engine's private `profile/` directory, and the host artifacts
+a capture tolerates beside it (console logs and an `archive/` directory);
+every other entry is rejected. `messages.jsonl` and
 `native-messages.jsonl` must be byte-identical aliases, and the
 compatibility text streams must match the events that produced them.
 
