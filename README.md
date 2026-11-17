@@ -88,3 +88,10 @@ command-boundary saves plus periodic older points. Set ANGBAND_SAVE_WINDOW
 and/or ANGBAND_SAVE_EVERY before recording. Use `view SOURCE --turn TURN` to
 inspect recorded screens without executing the game. Native saves start a
 new process; they do not serialize the bot's in-memory state.
+
+## Recording borg-reborn-rs games locally
+
+[docs/borg-reborn-rs-recording](docs/borg-reborn-rs-recording/README.md) is the
+owner's local workflow for recording a borg-reborn-rs game with this recorder,
+replaying it, opening its saves and watching its screens, with the scripts it
+uses. It builds in a separate worktree and does not change the consumer or its pin.
