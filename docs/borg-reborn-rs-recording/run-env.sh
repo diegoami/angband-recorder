@@ -6,7 +6,8 @@ export BRR_BUILD
 export BORG_CORE=borg-rs
 export BORG_ERRANDS_PLAN=harness/plans/errands_plan.txt
 export BORG_TOOLKIT_NATIVE=1
-export CHECKPOINT_EVERY=50000
+# A save every 1000 game turns (about 100 player turns, ~50 KB each), for rewind.sh.
+export CHECKPOINT_EVERY=1000
 export ANGBAND_BIN="$BRR_BUILD/build/rec/game/angband"
 export BORG_PARAM_ATTACK_PREFERENCE_BLACKGUARD_MELEE_PERMILLE=1600
 export BORG_PARAM_ATTACK_PREFERENCE_BLACKGUARD_SPELL_PERMILLE=1400
