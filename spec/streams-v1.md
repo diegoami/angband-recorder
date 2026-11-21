@@ -31,9 +31,9 @@ and separately labelled diagnostic state are host observations. `world` is
 FNV-1a-64 of an engine save written by a forked child; tick frames omit it.
 It is a fingerprint, not an uninterrupted continuation checkpoint. Hidden
 diagnostic state is never supplied to a bot.
-`final` is the last frame: `ar_finish` asks the host (`ar_host_final_frame`)
+`final` is the last frame: an explicit `ar_finish` call asks the host (`ar_host_final_frame`)
 for the end state before it closes the recording, unless an `exit` frame was
-already written. Frames precede each command, so without it the turns after
+already written (the `atexit` handler does not, as the engine is already torn down). Frames precede each command, so without it the turns after
 the last command, including a death, would not appear. A `final` frame omits
 `world`, like a tick, because the character may be dead.
 

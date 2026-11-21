@@ -58,7 +58,7 @@ try:
         if a.to_turn is not None and turn > a.to_turn:
             break
         n += 1
-        if n % a.every:
+        if n % a.every and fr.get('phase') == 'command':
             continue
         rows = [''.join(screen[i:i + w]) for i in range(0, w * h, w)]
         last = (f"frame {fr.get('index')}  turn {turn}  depth {fr.get('depth')}  "
@@ -71,4 +71,4 @@ except KeyboardInterrupt:
 finally:
     out.write('\x1b[?25h\n')
     if last is None:
-        print('watch-recording.py: no command or final frame in that range')
+        print('watch-recording.py: no command, final or exit frame in that range')

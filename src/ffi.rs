@@ -67,7 +67,7 @@ pub unsafe extern "C" fn ar_early_init(build: *const c_char) {
         getpid().into(),
     ));
     *SESSION.lock().unwrap() = Some(value);
-    if atexit(ar_finish) != 0 {
+    if atexit(ar_finish_at_exit) != 0 {
         fatal("cannot register recording finalization");
     }
 }
@@ -301,11 +301,16 @@ pub extern "C" fn ar_finish() {
     // turns after the last command, including a death, would be lost. Ask the
     // host for one closing frame first, outside the session lock because the
     // host calls ar_frame. A forked saver has no session here and is skipped.
+    // Only this direct call does so: the atexit handler below runs after the
+    // engine's own cleanup, when the host can no longer read the game.
     if with_session(|s| !(s.finished || s.failed || s.geometry_pending || s.closing_frame))
         == Some(true)
     {
         unsafe { ar_host_final_frame() };
     }
+    ar_finish_at_exit();
+}
+extern "C" fn ar_finish_at_exit() {
     // Never emit a receipt from the forked saver, even if the host uses exit().
     with_session(|s| checked(s.finish()));
 }
