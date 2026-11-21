@@ -163,7 +163,7 @@ fn main_result() -> Result<(), Box<dyn std::error::Error>> {
                         .unwrap_or(' ');
                 }
                 if turn.map_or(frame["index"].as_u64() == Some(wanted), |target| {
-                    frame["phase"] == "command"
+                    matches!(frame["phase"].as_str(), Some("command" | "final" | "exit"))
                         && frame["turn"].as_i64().is_some_and(|t| t >= target)
                 }) {
                     let wanted = frame["index"].as_u64().ok_or("missing frame index")?;
