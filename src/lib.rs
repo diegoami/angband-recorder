@@ -459,6 +459,9 @@ pub struct Session {
     file_count: u64,
     failed: bool,
     finished: bool,
+    /// An `exit` or `final` frame was written: the end state is recorded.
+    #[cfg(feature = "ffi")]
+    closing_frame: bool,
     #[cfg(feature = "ffi")]
     previous_cells: Vec<(u32, i32)>,
     #[cfg(feature = "ffi")]
@@ -554,6 +557,8 @@ impl Session {
             file_count: 0,
             failed: false,
             finished: false,
+            #[cfg(feature = "ffi")]
+            closing_frame: false,
             #[cfg(feature = "ffi")]
             previous_cells: Vec::new(),
             #[cfg(feature = "ffi")]

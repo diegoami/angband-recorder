@@ -90,7 +90,7 @@ additionally recomputes polls.
 
 ## Observations
 
-`frames.jsonl` — command/wait/input/tick/exit frames with index, turn, key
+`frames.jsonl` — command/wait/input/tick/exit/final frames with index, turn, key
 ordinal, input-poll count, vitals, full RNG, screen size and cell deltas;
 full resets at startup, resize and every hundred frames. `messages.jsonl`
 (frame, turn, type, text) and `combat.jsonl` are observation streams. Host

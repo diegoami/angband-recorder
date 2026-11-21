@@ -53,7 +53,7 @@ try:
             c = chr(code)
             screen[at] = c if c.isprintable() else ' '
         turn = fr.get('turn') or 0
-        if fr.get('phase') != 'command' or turn < a.from_turn:
+        if fr.get('phase') not in ('command', 'final', 'exit') or turn < a.from_turn:
             continue
         if a.to_turn is not None and turn > a.to_turn:
             break
@@ -71,4 +71,4 @@ except KeyboardInterrupt:
 finally:
     out.write('\x1b[?25h\n')
     if last is None:
-        print('watch-recording.py: no command frame in that range')
+        print('watch-recording.py: no command or final frame in that range')
