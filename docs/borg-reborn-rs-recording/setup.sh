@@ -27,7 +27,7 @@ flock /tmp/angband-validation.lock bash -c 'cmake -S engine -B build/rec -DCMAKE
     || { tail -30 build-rec.make.log build-rec.cmake.log 2>/dev/null; exit 1; }
 sha256sum build/rec/game/angband
 if [ "${NO_CURRENT:-0}" != 1 ]; then
-    ln -sfn "$BRR_BUILD" "$HOME/angband-builds/current"
+    ln -sfnT "$BRR_BUILD" "$HOME/angband-builds/current"
     echo "setup.sh: ready; ~/angband-builds/current now points at it (the scripts use it when BRR_BUILD is not set)."
 else
     echo "setup.sh: ready. export BRR_BUILD=$BRR_BUILD to use it (current was not changed)."

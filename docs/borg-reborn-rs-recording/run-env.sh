@@ -7,6 +7,9 @@ if [ -z "${BRR_BUILD:-}" ]; then
     if [ -d "$HOME/angband-builds/current" ]; then
         BRR_BUILD="$(realpath "$HOME/angband-builds/current")"
     else
+        if [ -L "$HOME/angband-builds/current" ]; then
+            echo "run-env.sh: warning: ~/angband-builds/current is a dangling link; using the first build (recorder v0.2.0, no closing frame). Re-run setup.sh or re-point the link." >&2
+        fi
         BRR_BUILD="$HOME/angband-builds/borg-reborn-rs-recording"
     fi
 fi

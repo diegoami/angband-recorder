@@ -31,11 +31,12 @@ the scripts use the build that link names when `BRR_BUILD` is not set, and
 `setup.sh` moves the link to every build it makes. `export BRR_BUILD=DIR` still
 overrides it (e.g. to replay with an older build).
 
-Older builds, kept to replay their recordings:
+Older builds, kept to replay their recordings (check `ls ~/angband-builds` for any others):
 
 | Directory | Commit | Recorder | Executable SHA-256 |
 |---|---|---|---|
 | `~/angband-builds/borg-reborn-rs-recording` | `f02cd294` | v0.2.0 (no closing frame) | `57b1885509ee88024b670845c137ca62098fa92af1c3e049eb68c862621b8cb0` |
+| `~/angband-builds/borg-reborn-rs-recording-v0.3.0` | `78fb330f` | v0.3.0 | `a8ad694bd5423ad3b1d6a90e6d0daabba2a012a3655469af6e51fcabc68b51e6` |
 
 The recorder ties a recording to its executable's hash: **don't rebuild a build
 whose recordings you want to replay**. Make a new one instead (see
@@ -122,10 +123,12 @@ died, and it doesn't affect the game or the recording.
 | `trace-core.jsonl`, `params-core.json` | The Borg's decisions and the parameter values it used |
 | `config.txt`, `process.json`, `stderr.log` | Run settings and hashes, process outcome, the last screen |
 
-`native/frames.jsonl` ends with a `final` frame, the end state (for a death,
-the death turn with `dead: 1`), when the build's recorder is v0.3.0 or later.
-Builds with an older recorder stop at the last command's frame, so the final
-turns, including a death, are missing from their recordings.
+`native/frames.jsonl` ends with the end state when the build's recorder is v0.3.0
+or later: a `final` frame for the headless runs here (a death, with `dead: 1`,
+or the turn limit), or an `exit` frame for a run that leaves through the game's
+own quit (e.g. a game window). Builds with an older recorder end a headless run
+at the last command's frame, so the final turns, including a death, are missing
+from their recordings.
 
 A 1,000,000-turn run takes a few minutes and about **1.1 GB**, almost all of
 it `native/frames.jsonl`.
@@ -233,16 +236,16 @@ recording replays only with the executable that made it.
    behind and carry an old recorder pin. `origin/main` (the default) is right.
 2. **Check the recorder** the build carries. It comes from the `recorder-pin.json`
    of that revision, not from this repository, and a Borg update alone never
-   changes it. From v0.3.0 on, a recording ends with a `final` frame holding the
-   end state (the death turn); older recorders lose the turns after the last
-   command.
+   changes it. From v0.3.0 on, a headless recording ends with a `final` frame
+   holding the end state (the death turn); older recorders lose the turns after
+   the last command.
    ```sh
    source $S/run-env.sh
    grep '"tag"' "$BRR_BUILD/recorder-pin.json"      # "tag": "v0.3.0" or later
    ```
    To see it work, record a game that dies and look at the last frame:
    ```sh
-   tail -n1 ~/angband-recordings/NAME/native/frames.jsonl | python3 -c "import sys,json;f=json.loads(sys.stdin.read());print(f['phase'],f['turn'],f['dead'])"   # final <death turn> 1
+   tail -n1 ~/angband-recordings/NAME/native/frames.jsonl | python3 -c "import sys,json;f=json.loads(sys.stdin.read());print(f['phase'],f['turn'],f['dead'])"   # final <death turn> 1 (alive at the turn limit: final <turn> 0)
    ```
 3. **Remove a build you no longer need** with git, not `rm -rf`: the build is a
    git worktree of borg-reborn-rs, and deleting the directory leaves a record
@@ -252,7 +255,7 @@ recording replays only with the executable that made it.
    # if the directory is already gone:  git -C ~/projects/angband/borg-reborn-rs worktree prune
    ```
    Recordings made with a removed build can no longer be replayed. If `current`
-   pointed at it, run `setup.sh` again or `ln -sfn ~/angband-builds/DIR ~/angband-builds/current`.
+   pointed at it, run `setup.sh` again or `ln -sfnT ~/angband-builds/DIR ~/angband-builds/current`.
 
 A recorder release reaches the builds only through a pin-update change in
 borg-reborn-rs (v0.3.0: its PR #809). After one is merged, a build made from a
