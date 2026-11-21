@@ -264,13 +264,17 @@ display, 2026-11-21):
   `exit`, holding the end state (turn, `dead`). A death is recorded the same way
   once you quit.
 - **The window is closed or killed abruptly** (the X connection breaks): the
-  game exits and the recording is still sealed (`complete.json`), but its last
-  frame is the last `command`/`wait` frame, with no `exit` or `final` frame, so
-  what happened after that frame is not in the recording. The recorder's closing
-  frame only runs for the headless frontend. Quit with Ctrl-X.
+  game exits and the recording is sealed (`complete.json`). With recorder
+  v0.3.0 its last frame was the last `command`/`wait` frame, so what happened
+  after it was lost. From the release after v0.3.0 (planned v0.3.1) the exit
+  handler writes a `final` frame of the end state, as the headless frontend
+  does. Checked under a virtual display on a scratch build of that change: a
+  killed window ends with `final`, a Ctrl-X quit with `exit` (no `final` after
+  it). Quit with Ctrl-X when you can; the `exit` frame is the game's own.
 
 Not checked: a window on a real display, a death in a window, killing the game
-with a signal.
+with a signal, and replaying a windowed recording (`replay --verify` needs a
+`launch.json`, which the launcher's recordings do not have).
 
 ## A new build, and how to get the latest
 
