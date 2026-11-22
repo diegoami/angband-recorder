@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Make a recording build of borg-reborn-rs:  setup.sh [REV]   (default REV: origin/main, after a fetch)
+# Make a recording build of borg-reborn-rs:  setup.sh [REV]   (default REV: origin/track-p, the owner's latest line, after a fetch)
 # Creates a detached git worktree at $BRR_BUILD (default ~/angband-builds/borg-reborn-rs-recording-<REV>,
 # with REV as 8 hex digits), applies the return settings to its harness/borg.txt and builds the headless
 # game with the recorder on into build/rec, then points ~/angband-builds/current at it (NO_CURRENT=1 skips
@@ -7,7 +7,7 @@
 # Refuses an existing $BRR_BUILD: keep old builds, they replay old recordings.
 set -euo pipefail
 : "${BORG_REBORN_RS:=$HOME/projects/angband/borg-reborn-rs}"
-REV="${1:-origin/main}"
+REV="${1:-origin/track-p}"
 # The local main of that checkout is not moved by a fetch and can be far behind (with an old recorder pin).
 git -C "$BORG_REBORN_RS" fetch --quiet origin || echo "setup.sh: warning: fetch failed; using what is local" >&2
 FULL="$(git -C "$BORG_REBORN_RS" rev-parse --verify --quiet "$REV^{commit}")" \
