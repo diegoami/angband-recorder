@@ -25,10 +25,10 @@ Environment: `BRR_BUILD` (the recording build; when unset, the build `~/angband-
 
 ## The current build
 
-`~/angband-builds/borg-reborn-rs-recording-88d98537`, borg-reborn-rs commit
-`88d98537` (made 2026-11-21), recorder v0.3.0, executable SHA-256
-`4d4642c0a77eaa7ee4752b00147f9e5a87a1834c985435431aa356b54ff0fe21`. Its
-recordings end with the `final` frame. `~/angband-builds/current` points at it:
+`~/angband-builds/borg-reborn-rs-recording-398f76ef`, borg-reborn-rs commit
+`398f76ef` (made 2026-11-21), recorder v0.3.1, executable SHA-256
+`23646c0be745da2776ddbacca4381fdb21b448ae43c24ea335efd2efc599ea94`. Its
+recordings end with the `final` frame, also when a window is killed or closed. `~/angband-builds/current` points at it:
 the scripts use the build that link names when `BRR_BUILD` is not set, and
 `setup.sh` moves the link to every build it makes. `export BRR_BUILD=DIR` still
 overrides it (e.g. to replay with an older build).
@@ -218,9 +218,14 @@ window with the recorder on from process startup, use the launcher command:
 
 ```sh
 angband-reborn-record CHARACTER            # a game window (default character: RustBorg)
+angband-reborn-record --no-record CHARACTER   # the same window, no recording: just play
 angband-reborn-record --watch ~/angband-recordings/SESSION [--from-turn TURN]   # play the screens in the terminal
 angband-reborn-record --frame ~/angband-recordings/SESSION [FRAME]              # one screen (default: the last)
 ```
+
+To just play, add `--no-record`: the same window, saves and settings, but no
+recording is made (the game records only when `ANGBAND_RECORD_DIR` is set, which the
+launcher does not do in this mode). Such a game cannot be replayed or watched later.
 
 It needs a desktop session (`DISPLAY`). Each run writes
 `~/angband-recordings/<date-time>-<CHARACTER>.XXXXXX/native` and copies the
@@ -251,9 +256,9 @@ minutes, and refuses an existing `BUILD/launcher`. Install again after making a
 new build (section *A new build*); the older installs keep working for their
 recordings.
 
-Current install: `~/angband-builds/borg-reborn-rs-recording-88d98537/launcher`
-(borg-reborn-rs `88d98537`, recorder v0.3.0, game SHA-256
-`29bc3092a67d64bb5934af0bcac78f58cfe4360ea159600fc68ef28e36e6a582`). The
+Current install: `~/angband-builds/borg-reborn-rs-recording-398f76ef/launcher`
+(borg-reborn-rs `398f76ef`, recorder v0.3.1, game SHA-256
+`541181826a80a0d82d5b1aa03af00c917548c57d2f155a9587ef1871aae8da84`). The
 previous one, made by hand, was
 `~/projects/angband/borg-reborn-rs/build/installed/d4471de7…/recording`
 (`d4471de7`, recorder v0.2.0); it is not in any repository and no script made it.

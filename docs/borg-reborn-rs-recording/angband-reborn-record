@@ -8,12 +8,15 @@ recorder="$install_dir/angband-recorder"
 recording_streams() {
     if [ -d "$1/native" ]; then printf '%s\n' "$1/native"; else printf '%s\n' "$1"; fi
 }
+record=1
+if [ "${1:-}" = --no-record ]; then record=0; shift; fi
 case "${1:-}" in
     -h|--help)
-        printf '%s\n' 'Usage: angband-reborn-record [CHARACTER]' \
+        printf '%s\n' 'Usage: angband-reborn-record [--no-record] [CHARACTER]' \
             '       angband-reborn-record --watch RECORDING [--from-turn TURN]' \
             '       angband-reborn-record --frame RECORDING [FRAME]' \
-            'Default character: RustBorg. Recordings go to ~/angband-recordings.'
+            '--no-record: play without a recording (same saves and settings). Default character: RustBorg.' \
+            'Recordings go to ~/angband-recordings.'
         exit 0 ;;
     --watch|--frame)
         mode=$1
@@ -30,7 +33,7 @@ case "${1:-}" in
     -*) printf 'Unknown option: %s\n' "$1" >&2; exit 2 ;;
 esac
 if [ "$#" -gt 1 ]; then
-    printf 'Usage: angband-reborn-record [CHARACTER]\n' >&2
+    printf 'Usage: angband-reborn-record [--no-record] [CHARACTER]\n' >&2
     exit 2
 fi
 name=${1:-RustBorg}
@@ -50,6 +53,13 @@ if [ ! -e "$data/user/borg.txt" ]; then
             cp "$repo/.angband-reborn/user/$setting_file" "$data/user/$setting_file"
         fi
     done
+fi
+if [ "$record" = 0 ]; then
+    # No ANGBAND_RECORD_DIR, so the game does not record (the recorder is inert without it).
+    cd "$install_dir/game"
+    exec ./angband -mx11 \
+        -duser="$data/user" -dsave="$data/save" -darchive="$data/archive" \
+        -dpanic="$data/panic" -dscores="$data/scores" -u"$name"
 fi
 label=${name//[^a-zA-Z0-9_-]/_}
 session=$(mktemp -d "$recordings/$(date +%Y%m%d-%H%M%S)-${label:0:40}.XXXXXX")
