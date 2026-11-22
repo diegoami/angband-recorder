@@ -236,6 +236,12 @@ recordings with `BORG_RECORDINGS_DIR`), not in the recording. In the game,
 Ctrl-Z then `z` starts the Borg and any key stops it; **Ctrl-X saves and
 quits**.
 
+The settings file is copied from the repository only when it is missing, so it
+does not follow a new build: a file from last week keeps its old values (this is how
+a recovery that a later build turned on stayed off in play). The launcher counts the
+settings the build's `harness/borg.txt` has and yours lacks, and prints the command that
+refreshes it (it keeps a `.before-DATE` copy); it does not change the file itself.
+
 A window build is not the headless build: `setup.sh` builds with X11 off, and
 a recorder variable does nothing in a binary built without the recorder. So the
 launcher has its own install, made from a build:
