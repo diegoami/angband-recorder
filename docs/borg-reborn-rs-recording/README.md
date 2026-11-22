@@ -10,7 +10,7 @@ The scripts are in this directory. `S` below means this directory, e.g.
 
 | Script | What |
 |---|---|
-| `setup.sh [REV]` | Makes the recording build of `REV` (default `origin/main`, fetched): a detached worktree of borg-reborn-rs at `$BRR_BUILD` (default `~/angband-builds/borg-reborn-rs-recording-<REV>`), the return settings in its `harness/borg.txt`, and a headless game with the recorder on in `build/rec` (`-DSUPPORT_BORG_RECORDING=ON`), and the `~/angband-builds/current` link. |
+| `setup.sh [REV]` | Makes the recording build of `REV` (default `origin/track-p`, fetched): a detached worktree of borg-reborn-rs at `$BRR_BUILD` (default `~/angband-builds/borg-reborn-rs-recording-<REV>`), the return settings in its `harness/borg.txt`, and a headless game with the recorder on in `build/rec` (`-DSUPPORT_BORG_RECORDING=ON`), and the `~/angband-builds/current` link. |
 | `record.sh` | Records a game and shows it live in the terminal. |
 | `angband-reborn-record` | Plays a game **in a window**, recorded from startup (the command you run; installed by `install-launcher.sh`). |
 | `install-launcher.sh [BUILD]` | Builds the game with X11 and the recorder for a build, and installs `angband-reborn-record` from it. |
@@ -295,7 +295,8 @@ into the game, so a changed Borg needs a new build. **Keep the old builds**: a
 recording replays only with the executable that made it.
 
 1. **Build the latest.** With no arguments `setup.sh` fetches borg-reborn-rs and
-   builds `origin/main` into `~/angband-builds/borg-reborn-rs-recording-<revision>`
+   builds `origin/track-p` (the owner's latest line, ahead of `main`) into
+   `~/angband-builds/borg-reborn-rs-recording-<revision>`
    (the revision as 8 hex digits, so the name says which Borg it has). It takes
    the validation lock and a few minutes, refuses an existing directory, and
    points `~/angband-builds/current` at the new build, which is what the other
@@ -314,7 +315,8 @@ recording replays only with the executable that made it.
 
    Don't give it plain `main` and don't fetch by hand: `main` is the checkout's
    local branch, which a fetch doesn't move, so it can be hundreds of commits
-   behind and carry an old recorder pin. `origin/main` (the default) is right.
+   behind and carry an old recorder pin. `origin/track-p` (the default) is the latest;
+   `origin/main` is behind it (by more than a hundred commits on 2026-11-22), so build that only on request.
 2. **Check the recorder** the build carries. It comes from the `recorder-pin.json`
    of that revision, not from this repository, and a Borg update alone never
    changes it. From v0.3.0 on, a headless recording ends with a `final` frame
