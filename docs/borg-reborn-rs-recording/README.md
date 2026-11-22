@@ -219,6 +219,9 @@ window with the recorder on from process startup, use the launcher command:
 ```sh
 angband-reborn-record CHARACTER            # a game window (default character: RustBorg)
 angband-reborn-record --no-record CHARACTER   # the same window, no recording: just play
+angband-reborn-record --auto CHARACTER        # delay 0 and the Borg started, no keys to press
+angband-reborn-record --delay 0 CHARACTER     # only set the base delay factor (0 to 255 msec)
+angband-reborn-record --borg CHARACTER        # only start the Borg
 angband-reborn-record --watch ~/angband-recordings/SESSION [--from-turn TURN]   # play the screens in the terminal
 angband-reborn-record --frame ~/angband-recordings/SESSION [FRAME]              # one screen (default: the last)
 ```
@@ -235,6 +238,18 @@ It needs a desktop session (`DISPLAY`). Each run writes
 recordings with `BORG_RECORDINGS_DIR`), not in the recording. In the game,
 Ctrl-Z then `z` starts the Borg and any key stops it; **Ctrl-X saves and
 quits**.
+
+`--delay MSEC`, `--borg` and `--auto` (= `--delay 0 --borg`) press the game's own keys in
+its window once it is up: `=` `d` MSEC Return sets the base delay factor, which the game
+saves with the character, and Ctrl-Z `z` starts the Borg (a character that has never run
+the Borg also gets its two messages and the y/n question answered). They work on any
+combination with `--no-record`. Limits: they need `xdotool` and ImageMagick (`import`,
+`convert`); they take the window's focus while they type, about 4 s plus a few seconds
+after it opens (`AUTOSTART_WAIT=SECONDS` changes the 4); and the character must already
+exist, so make a new one first (birth screens), quit with Ctrl-X, then start it with the
+options (the launcher says so if the save is missing). Tested under Xvfb: a first-time
+and an already-flagged character both start the Borg, and `--delay 7` shows as
+"Current base delay factor: 7 msec" in the options menu.
 
 The settings file is copied from the repository only when it is missing, so it
 does not follow a new build: a file from last week keeps its old values (this is how
