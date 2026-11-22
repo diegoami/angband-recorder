@@ -9,7 +9,8 @@ set -euo pipefail
 : "${BORG_REBORN_RS:=$HOME/projects/angband/borg-reborn-rs}"
 REV="${1:-origin/track-p}"
 # The local main of that checkout is not moved by a fetch and can be far behind (with an old recorder pin).
-git -C "$BORG_REBORN_RS" fetch --quiet origin || echo "setup.sh: warning: fetch failed; using what is local" >&2
+# Fetch every branch: a checkout that tracks only main would otherwise never get origin/track-p.
+git -C "$BORG_REBORN_RS" fetch --quiet origin '+refs/heads/*:refs/remotes/origin/*' || echo "setup.sh: warning: fetch failed; using what is local" >&2
 FULL="$(git -C "$BORG_REBORN_RS" rev-parse --verify --quiet "$REV^{commit}")" \
     || { echo "setup.sh: no such revision: $REV" >&2; exit 2; }
 : "${BRR_BUILD:=$HOME/angband-builds/borg-reborn-rs-recording-${FULL:0:8}}"
