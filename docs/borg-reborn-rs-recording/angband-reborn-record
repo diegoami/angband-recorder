@@ -8,14 +8,27 @@ recorder="$install_dir/angband-recorder"
 recording_streams() {
     if [ -d "$1/native" ]; then printf '%s\n' "$1/native"; else printf '%s\n' "$1"; fi
 }
-record=1
-if [ "${1:-}" = --no-record ]; then record=0; shift; fi
+record=1 borg=0 delay=
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --no-record) record=0; shift ;;
+        --borg) borg=1; shift ;;
+        --delay) delay=${2:?--delay needs a number, 0 to 255}; shift 2 ;;
+        --auto) borg=1; delay=0; shift ;;
+        *) break ;;
+    esac
+done
+case "$delay" in ''|*[!0-9]*) [ -z "$delay" ] || { printf -- '--delay needs a number, 0 to 255\n' >&2; exit 2; } ;; esac
+[ -z "$delay" ] || [ "$delay" -le 255 ] || { printf -- '--delay needs a number, 0 to 255\n' >&2; exit 2; }
 case "${1:-}" in
     -h|--help)
-        printf '%s\n' 'Usage: angband-reborn-record [--no-record] [CHARACTER]' \
+        printf '%s\n' 'Usage: angband-reborn-record [--no-record] [--delay MSEC] [--borg | --auto] [CHARACTER]' \
             '       angband-reborn-record --watch RECORDING [--from-turn TURN]' \
             '       angband-reborn-record --frame RECORDING [FRAME]' \
             '--no-record: play without a recording (same saves and settings). Default character: RustBorg.' \
+            '--delay MSEC: set the base delay factor (0-255; it is saved with the character).' \
+            '--borg: start the Borg once the game is up.  --auto: --delay 0 and --borg.' \
+            '  (these send the game its own keys; they need xdotool, ImageMagick and an existing character).' \
             'Recordings go to ~/angband-recordings.'
         exit 0 ;;
     --watch|--frame)
@@ -33,7 +46,7 @@ case "${1:-}" in
     -*) printf 'Unknown option: %s\n' "$1" >&2; exit 2 ;;
 esac
 if [ "$#" -gt 1 ]; then
-    printf 'Usage: angband-reborn-record [--no-record] [CHARACTER]\n' >&2
+    printf 'Usage: angband-reborn-record [--no-record] [--delay MSEC] [--borg | --auto] [CHARACTER]\n' >&2
     exit 2
 fi
 name=${1:-RustBorg}
@@ -66,6 +79,46 @@ if [ -f "$shipped" ] && [ -f "$data/user/borg.txt" ]; then
         printf '  To use the build'"'"'s: cp -p %s %s.before-$(date +%%Y%%m%%d) && cp %s %s\n' \
             "$data/user/borg.txt" "$data/user/borg.txt" "$(realpath "$shipped")" "$data/user/borg.txt" >&2
     fi
+fi
+# --delay / --borg: once the window is up, press the game's own keys in it: "=" "d" N Return Escape sets the
+# base delay factor, Ctrl-Z "z" starts the Borg. A new character needs its birth screens first, so refuse that.
+if [ -n "$delay" ] || [ "$borg" = 1 ]; then
+    command -v xdotool >/dev/null || { printf 'angband-reborn-record: --delay/--borg need xdotool\n' >&2; exit 1; }
+    [ -f "$data/save/$name" ] || {
+        printf 'angband-reborn-record: %s has no save yet: make the character first (start without --delay/--borg),\n  quit with Ctrl-X, then start it again with these options.\n' "$name" >&2
+        exit 1; }
+    known=$(xdotool search --name '^Angband' 2>/dev/null | sort || true)
+    (
+        win=
+        for _ in $(seq 1 100); do
+            for id in $(xdotool search --name '^Angband' 2>/dev/null || true); do
+                grep -qx "$id" <<<"$known" || win=$id
+            done
+            [ -z "$win" ] || break
+            sleep 0.3
+        done
+        [ -n "$win" ] || exit 0
+        sleep "${AUTOSTART_WAIT:-4}"
+        press() { xdotool windowactivate --sync "$win" 2>/dev/null || true
+                  xdotool key --window "$win" --delay 60 "$@"; sleep 0.4; }
+        press Escape
+        if [ -n "$delay" ]; then
+            press equal d
+            press $(printf '%s' "$delay" | sed 's/./& /g') Return
+            press Escape Escape
+        fi
+        if [ "$borg" = 1 ]; then
+            press ctrl+z
+            # A character that has never run the Borg gets two long messages (-more-) and a y/n question first. A pending
+            # message on the top row reaching right of column 40 tells it apart from the short Borg prompt.
+            if command -v import >/dev/null && command -v convert >/dev/null \
+                && [ "$(import -window "$win" -crop 500x22+400+0 +repage png:- 2>/dev/null \
+                        | convert png:- -format '%[fx:maxima>0.1?1:0]' info: 2>/dev/null)" = 1 ]; then
+                press Return Return y
+            fi
+            press z
+        fi
+    ) >/dev/null 2>&1 &
 fi
 if [ "$record" = 0 ]; then
     # No ANGBAND_RECORD_DIR, so the game does not record (the recorder is inert without it).
