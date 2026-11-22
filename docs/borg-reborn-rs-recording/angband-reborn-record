@@ -51,6 +51,19 @@ if [ ! -e "$data/user/borg.txt" ]; then
         fi
     done
 fi
+# The settings file is copied once and then kept, so a newer build can run with a stale one (missing
+# parameters, or old values such as a recovery switched off). Say so, with the command that refreshes it.
+shipped="$install_dir/../harness/borg.txt"
+if [ -f "$shipped" ] && [ -f "$data/user/borg.txt" ]; then
+    keys() { grep -oE '^[a-z_0-9]+ *=' "$1" | tr -d ' =' | sort -u; }
+    missing=$(comm -13 <(keys "$data/user/borg.txt") <(keys "$shipped") | wc -l)
+    if [ "$missing" -gt 0 ]; then
+        printf 'angband-reborn-record: warning: %s lacks %s settings this build ships; the game uses its older values.\n' \
+            "$data/user/borg.txt" "$missing" >&2
+        printf '  To use the build'"'"'s: cp -p %s %s.before-$(date +%%Y%%m%%d) && cp %s %s\n' \
+            "$data/user/borg.txt" "$data/user/borg.txt" "$(realpath "$shipped")" "$data/user/borg.txt" >&2
+    fi
+fi
 label=${name//[^a-zA-Z0-9_-]/_}
 session=$(mktemp -d "$recordings/$(date +%Y%m%d-%H%M%S)-${label:0:40}.XXXXXX")
 mkdir "$session/borg-settings"
