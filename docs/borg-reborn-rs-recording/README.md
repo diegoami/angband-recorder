@@ -25,11 +25,13 @@ Environment: `BRR_BUILD` (the recording build; when unset, the build `~/angband-
 
 ## The current build
 
-`~/angband-builds/borg-reborn-rs-recording-398f76ef`, borg-reborn-rs commit
-`398f76ef` (made 2026-11-21), recorder v0.3.1, executable SHA-256
-`23646c0be745da2776ddbacca4381fdb21b448ae43c24ea335efd2efc599ea94`. Its
-recordings end with the `final` frame, also when a window is killed or closed. `~/angband-builds/current` points at it:
-the scripts use the build that link names when `BRR_BUILD` is not set, and
+The build `~/angband-builds/current` points at: borg-reborn-rs `origin/track-p` as of the
+day `setup.sh` last ran, which names its directory after the commit
+(`borg-reborn-rs-recording-<8 hex digits>`). This README does not name it, because the
+name changes with every rebuild: `readlink ~/angband-builds/current` says which it is,
+and `current/launcher/INSTALL-RECEIPT` has its commit, recorder pin and executable
+SHA-256s. With recorder v0.3.1 or later, recordings end with the `final` frame, also when
+a window is killed or closed. The scripts use the build that link names when `BRR_BUILD` is not set, and
 `setup.sh` moves the link to every build it makes. `export BRR_BUILD=DIR` still
 overrides it (e.g. to replay with an older build).
 
@@ -262,9 +264,8 @@ minutes, and refuses an existing `BUILD/launcher`. Install again after making a
 new build (section *A new build*); the older installs keep working for their
 recordings.
 
-Current install: `~/angband-builds/borg-reborn-rs-recording-398f76ef/launcher`
-(borg-reborn-rs `398f76ef`, recorder v0.3.1, game SHA-256
-`541181826a80a0d82d5b1aa03af00c917548c57d2f155a9587ef1871aae8da84`). The
+Current install: `~/angband-builds/current/launcher`; its `INSTALL-RECEIPT` records the
+commit, the recorder pin and the game's SHA-256. The
 previous one, made by hand, was
 `~/projects/angband/borg-reborn-rs/build/installed/d4471de7…/recording`
 (`d4471de7`, recorder v0.2.0); it is not in any repository and no script made it.
