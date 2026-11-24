@@ -340,17 +340,48 @@ recording replays only with the executable that made it.
    Recordings made with a removed build can no longer be replayed. If `current`
    pointed at it, run `setup.sh` again or `ln -sfnT ~/angband-builds/DIR ~/angband-builds/current`.
 
+4. **Refresh the play settings.** The launcher copies `borg.txt`, `errands_plan.txt` and
+   `scary_monsters.txt` into `~/projects/angband/borg-reborn-rs/.angband-reborn/user/`
+   once and then keeps them, so a new build plays with whatever is there. A stale file
+   switched off a recovery that a later build turned on (2026-11-21: `recover_unseen_*`
+   stayed 0, and the priest ran out of light again). The launcher's warning only counts
+   settings the file *lacks*, not values that changed, so compare after every build:
+   ```sh
+   B=$(readlink ~/angband-builds/current); U=~/projects/angband/borg-reborn-rs/.angband-reborn/user
+   diff <(grep -E '^[a-z_0-9]+ *=' $U/borg.txt | sed 's/ *= */=/' | sort) \
+        <(grep -E '^[a-z_0-9]+ *=' $B/harness/borg.txt | sed 's/ *= */=/' | sort)
+   cmp $U/scary_monsters.txt $B/harness/scary_monsters.txt
+   # to take the build's: keep a copy, then replace
+   cp -p $U/borg.txt $U/borg.txt.before-$(date +%Y%m%d-%H%M%S) && cp $B/harness/borg.txt $U/borg.txt
+   ```
+   A running game keeps the settings it loaded; restart the character to use new ones.
+   `setup.sh` already puts the `borg_trip_*` values in the build's `harness/borg.txt`.
+
+   A branch builds the same way (`$S/setup.sh origin/task/T1153-loop-detector`); `current`
+   then points at it, and the next plain `setup.sh` goes back to `origin/track-p`.
+
+## Disk and recordings
+
+- A window game with the Borg at delay 0 writes about 10 to 12 GB of recording per hour
+  (measured 2026-11-22: 12 GB after 77 minutes, 1,048,531 frames). On 2026-11-22 the disk
+  filled to 4 KB free and a running game stopped with no closing frame; the cause was not
+  seen directly (the launcher keeps no error output), the full disk is the likely one. Check
+  `df -h /` before a long run, or play with `--no-record`.
+- Recordings are what issues cite as evidence, by directory name. Before deleting one,
+  `gh search issues NAME --repo diegoami/borg-reborn-rs` shows whether one does: a cited
+  recording is the only copy of what the issue describes (a save of the same moment is
+  overwritten within seconds, because the game saves itself as it plays).
+- GitHub issue comments take a file only through the browser's upload; `gh` cannot attach one.
+  Zips for that are made in `~/angband-play/` and, on the owner's WSL machine, copied to
+  `/mnt/c/Users/diego/Downloads/`.
+
 A recorder release reaches the builds only through a pin-update change in
 borg-reborn-rs (v0.3.0: its PR #809). After one is merged, a build made from a
 revision at or after the merge has it.
 
 ## Recordings so far
 
-These three were made before the save interval became 1,000 game turns: they
-have a save every 50,000, so `rewind.sh` finds an older save for them.
-
-| Directory | Seed | Character | Outcome |
-|---|---|---|---|
-| `~/angband-recordings/gnome-mage-20261117` | 20261117 | Gnome Mage | Died at level 2 on dungeon level 1 (giant white mouse), turn 14,762. Replay verified identical. |
-| `~/angband-recordings/1` | 0 | Gnome Mage | Survived to turn 1,000,009, level 9, never deeper than dungeon level 3. |
-| `~/angband-recordings/gnome-mage-20261117-failed-finalsave` | 20261117 | Gnome Mage | Broken first attempt (`finalsave`); not replayable, can be deleted. |
+The owner deletes recordings to free disk, so this README keeps no list of them: look in
+`~/angband-recordings/`. The first ones (the Gnome Mage runs of 2026-11-17, seed 20261117 and
+seed 0, made with build f02cd294) were deleted by 2026-11-23 and can no longer be replayed;
+the builds that made them are not needed.
